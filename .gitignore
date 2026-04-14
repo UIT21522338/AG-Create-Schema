@@ -25,10 +25,10 @@ env_local/
 
 # Environment / secrets
 env/.env
+env/.env.example
 .env
 .env.*
 !.env.example
-!env/.env.example
 *.pem
 *.key
 *.crt
