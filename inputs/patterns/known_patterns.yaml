@@ -285,6 +285,9 @@ patterns:
     source_hints:
       likely_fact_tables:
         - "*fact_inventory*"
+        - "in_trans"
+        - "batch"
+        - "in_inventory"
       likely_dim_tables:
         - "*dim_product*"
         - "*dim_distributor*"
@@ -364,6 +367,10 @@ patterns:
       likely_fact_tables:
         - "*fact_visitplan*"
         - "*fact_visitactual*"
+        - "om_salesroutedet"
+        - "vs_salespersonroute"
+        - "om_salesroute"
+        - "ppc_outsidechecking"
       likely_dim_tables:
         - "*dim_salesperson*"
         - "*dim_outlet*"
@@ -446,6 +453,7 @@ patterns:
     source_hints:
       likely_fact_tables:
         - "*fact_kpisales*"
+        - "om_kpisales_all"
       likely_dim_tables:
         - "*dim_kpi*"
         - "*dim_salesperson*"

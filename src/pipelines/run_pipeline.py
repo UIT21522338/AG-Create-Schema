@@ -13,6 +13,7 @@ from src.agents.metric_parser_agent import (
     parse_dashboard_spec_raw_to_yaml,
 )
 from src.agents.relevant_tables_selector_agent import build_relevant_tables_and_filtered_specs
+from src.agents.schema_merge_agent import build_source_schema_merged
 from src.agents.semantic_enricher_agent import run_semantic_enrichment
 from src.utils.path_utils import set_active_run_id
 
@@ -28,6 +29,7 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
     Execute end-to-end DW design pipeline for a given run.
 
     Steps executed here:
+    - Step 0: Source Schema Merge
     - Step 1: Semantic Enrichment
     - Step 2.1: Parse raw dashboard text to dashboard_spec.yaml
     - Step 2.2: Normalize metric mapping to parsed_metrics.yaml
@@ -41,6 +43,9 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
     logger.info("Starting pipeline for run_id=%s", run_id)
 
     try:
+        step0_output = build_source_schema_merged(run_id)
+        logger.info("Step 0 output path: %s", step0_output)
+
         step1_output = run_semantic_enrichment(run_id)
         logger.info("Step 1 output path: %s", step1_output)
 
@@ -77,6 +82,7 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
 
         logger.info("Pipeline completed for run_id=%s", run_id)
         return {
+            "source_schema_merged": step0_output,
             "semantic_enrichment": step1_output,
             "dashboard_spec": dashboard_spec_path,
             "parsed_metrics": parsed_metrics_path,
