@@ -1,0 +1,22 @@
+bronze:
+  schema: f_brz
+  table_prefix: brz_
+  # Bronze: 1:1 với source, chỉ thêm cột ETL, không đổi tên cột
+  column_case: preserve           # hoặc original
+  preserve_source_names: true     # ưu tiên flag này
+  etl_metadata_columns: [_batch_id, _loaded_at, _source_system]
+
+silver:
+  schema: f_slv
+  table_prefix: slv_
+  column_case: lower_snake_case   # rename ở Silver
+  allowed_transforms: [rename, cast, deduplicate, validate]
+  disallowed_transforms: [join, aggregate, business_filter]
+
+gold:
+  schema: f_gld
+  dim_prefix: dim_
+  fact_prefix: fct_
+  surrogate_key_suffix: _sk
+  business_key_suffix: _bk
+  metric_suffix: _amt

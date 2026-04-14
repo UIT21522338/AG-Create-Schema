@@ -1,0 +1,398 @@
+version: 1
+description: >
+  Central metric dictionary for 5 modules: sellout, sellin, inventory,
+  customer, salesforce&kpi. Used by agents to map business metrics to
+  facts/dims and to design Gold schema.
+
+metrics:
+
+  # ============================================================
+  # SELLOUT MODULE
+  # ============================================================
+  - id: sellout_amount
+    module: sellout
+    label: "Sellout Amount (GSV)"
+    business_definition: >
+      Tổng doanh thu bán ra sau khi trừ chiều hướng trả hàng,
+      đo trên bán ra thực tế (sellout), gồm thuế.
+      Đơn hàng IN, PV tính dương; IR (trả hàng) tính âm.
+    preferred_formula: >
+      SUM(amt_incl_tax) WHERE order_type IN ('IN','PV')
+      MINUS
+      SUM(amt_incl_tax) WHERE order_type = 'IR'
+    default_fact: fact_sellout
+    grain: order_line
+    default_dimensions:
+      - dim_date
+      - dim_distributor
+      - dim_salesperson
+      - dim_outlet
+      - dim_product
+      - dim_territory
+      - dim_zone
+      - dim_channel
+      - dim_shoptype
+
+  - id: discount_amount
+    module: sellout
+    label: "Discount Amount"
+    business_definition: "Tổng tiền chiết khấu trên các dòng hàng bán ra."
+    preferred_formula: "SUM(disc_amt)"
+    default_fact: fact_sellout
+    grain: order_line
+    default_dimensions:
+      - dim_date
+      - dim_distributor
+      - dim_salesperson
+      - dim_outlet
+      - dim_product
+
+  - id: number_of_orders_sellout
+    module: sellout
+    label: "Number of Orders (Sellout)"
+    business_definition: "Tổng số đơn hàng bán ra (đơn hoàn tất)."
+    preferred_formula: "COUNT(DISTINCT order_number)"
+    default_fact: fact_sellout
+    grain: order_header
+    default_dimensions:
+      - dim_date
+      - dim_distributor
+      - dim_salesperson
+      - dim_territory
+      - dim_zone
+
+  - id: aso
+    module: sellout
+    label: "Active Selling Outlets (ASO)"
+    business_definition: >
+      Số điểm bán có phát sinh bán ra thực tế trong kỳ,
+      có xét chiều hướng trả hàng.
+    preferred_formula: >
+      COUNT(DISTINCT outlet_id)
+      WHERE order_type IN ('IN','PV')
+      MINUS
+      COUNT(DISTINCT outlet_id)
+      WHERE order_type = 'IR'
+    default_fact: fact_sellout
+    grain: outlet_period
+    default_dimensions:
+      - dim_date
+      - dim_distributor
+      - dim_territory
+      - dim_zone
+      - dim_channel
+      - dim_shoptype
+
+  - id: develop_new_account
+    module: sellout
+    label: "Develop New Account"
+    business_definition: "Số outlet mới phát sinh doanh thu sellout trong kỳ."
+    preferred_formula: >
+      COUNT(DISTINCT outlet_id)
+      WHERE first_sellout_date in period
+    default_fact: fact_sellout
+    grain: outlet_period
+
+  - id: outlet_churn_rate
+    module: sellout
+    label: "Outlet Churn Rate"
+    business_definition: >
+      Tỉ lệ điểm bán bị mất (không còn phát sinh bán ra)
+      trong kỳ so với tổng outlet.
+    preferred_formula: "lost_outlet / total_outlet * 100"
+    default_fact: fact_sellout
+    grain: territory_period
+
+  - id: value_per_outlet
+    module: sellout
+    label: "Value per Outlet"
+    business_definition: "Doanh thu sellout trung bình trên mỗi outlet active."
+    preferred_formula: "sellout_amount / aso"
+    default_fact: fact_sellout
+    grain: outlet_period
+
+  - id: productive_call_pct
+    module: sellout
+    label: "Productive Call %"
+    business_definition: >
+      Tỉ lệ viếng thăm sinh số = số lần viếng thăm có đơn hàng
+      chia cho số viếng thăm theo kế hoạch.
+    preferred_formula: >
+      productive_call_pct =
+        COUNT(fact_visitactual WHERE has_order = true)
+        / COUNT(fact_visitplan) * 100
+    default_fact: fact_visitactual
+    supporting_facts:
+      - fact_visitplan
+    grain: salesperson_period
+
+
+  # ============================================================
+  # SELLIN MODULE
+  # ============================================================
+  - id: sellin_amount
+    module: sellin
+    label: "Sellin Amount"
+    business_definition: "Tổng giá trị hàng nhập từ nhà cung cấp vào NPP."
+    preferred_formula: "SUM(received_amt)"
+    default_fact: fact_sellin
+    grain: order_line
+    default_dimensions:
+      - dim_date    # received_date
+      - dim_distributor
+      - dim_product
+      - dim_brand
+      - dim_productclass
+
+  - id: sellin_volume
+    module: sellin
+    label: "Sellin Volume (CS)"
+    business_definition: "Tổng số lượng nhận (case)."
+    preferred_formula: "SUM(received_qty_cs)"
+    default_fact: fact_sellin
+    grain: order_line
+
+  - id: number_of_orders_sellin
+    module: sellin
+    label: "Number of Orders (Sellin)"
+    business_definition: "Tổng số đơn đặt hàng nhập."
+    preferred_formula: "COUNT(DISTINCT order_number)"
+    default_fact: fact_sellin
+    grain: order_header
+
+  - id: number_of_distributors_sellin
+    module: sellin
+    label: "Number of Distributors (Sellin)"
+    business_definition: "Số NPP có phát sinh nhập hàng trong kỳ."
+    preferred_formula: "COUNT(DISTINCT distributor_id)"
+    default_fact: fact_sellin
+    grain: distributor_period
+
+  - id: avg_order_value_sellin
+    module: sellin
+    label: "Average Order Value (Sellin)"
+    business_definition: "Giá trị trung bình mỗi đơn sellin."
+    preferred_formula: "sellin_amount / number_of_orders_sellin"
+    default_fact: fact_sellin
+    grain: order_header
+
+  - id: sku_per_order_sellin
+    module: sellin
+    label: "SKU per Order (Sellin)"
+    business_definition: "Số SKU trung bình trên mỗi đơn sellin."
+    preferred_formula: "COUNT(DISTINCT product_id) per order"
+    default_fact: fact_sellin
+    grain: order_header
+
+  - id: sellin_per_distributor
+    module: sellin
+    label: "Sellin per Distributor"
+    business_definition: "Giá trị sellin trung bình trên mỗi NPP."
+    preferred_formula: "sellin_amount / number_of_distributors_sellin"
+    default_fact: fact_sellin
+    grain: distributor_period
+
+  - id: fillrate
+    module: sellin
+    label: "Fill Rate"
+    business_definition: >
+      Tỉ lệ fulfill đơn hàng: số lượng nhận / số lượng đặt,
+      có thể tính theo volume hoặc theo value.
+    preferred_formula: "SUM(received_qty) / SUM(order_qty) * 100"
+    default_fact: fact_sellin
+    grain: order_line
+
+
+  # ============================================================
+  # INVENTORY MODULE
+  # ============================================================
+  - id: ending_quantity
+    module: inventory
+    label: "Ending Quantity"
+    business_definition: >
+      Số lượng tồn cuối kỳ, tính từ tồn đầu kỳ và các transaction nhập/xuất
+      trong kỳ.
+    preferred_formula: "begin_quantity + receipts - issues"
+    default_fact: fact_inventory_snapshot
+    grain: product_batch_distributor_month
+
+  - id: beginning_quantity
+    module: inventory
+    label: "Beginning Quantity"
+    business_definition: "Số lượng tồn đầu kỳ (thường là tồn cuối của kỳ trước)."
+    preferred_formula: "snapshot at period_start"
+    default_fact: fact_inventory_snapshot
+    grain: product_batch_distributor_month
+
+  - id: ending_dispatch_qty
+    module: inventory
+    label: "Ending Dispatch Quantity"
+    business_definition: "Tổng số lượng xuất trong kỳ."
+    preferred_formula: "SUM(qty WHERE transaction_type = 'OUT')"
+    default_fact: fact_inventory
+    grain: transaction_line
+
+  - id: ending_receipt_qty
+    module: inventory
+    label: "Ending Receipt Quantity"
+    business_definition: "Tổng số lượng nhập trong kỳ."
+    preferred_formula: "SUM(qty WHERE transaction_type = 'IN')"
+    default_fact: fact_inventory
+    grain: transaction_line
+
+  - id: ending_value
+    module: inventory
+    label: "Ending Value"
+    business_definition: "Giá trị tồn cuối kỳ (ending_quantity * unit_rate hoặc từ snapshot)."
+    preferred_formula: "ending_quantity * avg_cost"
+    default_fact: fact_inventory_snapshot
+    grain: product_batch_distributor_month
+
+  - id: beginning_value
+    module: inventory
+    label: "Beginning Value"
+    business_definition: "Giá trị tồn đầu kỳ."
+    preferred_formula: "snapshot at period_start"
+    default_fact: fact_inventory_snapshot
+    grain: product_batch_distributor_month
+
+  - id: ending_dispatch_value
+    module: inventory
+    label: "Ending Dispatch Value"
+    business_definition: "Giá trị xuất trong kỳ."
+    preferred_formula: "SUM(amt WHERE transaction_type = 'OUT')"
+    default_fact: fact_inventory
+
+  - id: ending_receipt_value
+    module: inventory
+    label: "Ending Receipt Value"
+    business_definition: "Giá trị nhập trong kỳ."
+    preferred_formula: "SUM(amt WHERE transaction_type = 'IN')"
+    default_fact: fact_inventory
+
+  - id: avg_age_of_inventory
+    module: inventory
+    label: "Average Age of Inventory"
+    business_definition: "Số ngày lưu kho trung bình của tồn."
+    preferred_formula: "Weighted average of days since receipt per batch"
+    default_fact: fact_inventory_snapshot
+    grain: product_batch_distributor_month
+
+
+  # ============================================================
+  # CUSTOMER MODULE
+  # ============================================================
+  - id: total_outlet
+    module: customer
+    label: "Total Outlet"
+    business_definition: "Tổng số outlet trong universe tại một thời điểm."
+    preferred_source: dim_outlet
+    preferred_formula: "COUNT(DISTINCT outlet_id)"
+    grain: outlet_snapshot
+
+  - id: active_outlet
+    module: customer
+    label: "Active Outlet"
+    business_definition: "Số outlet có trạng thái Active (status = 'A')."
+    preferred_source: dim_outlet
+    preferred_formula: "COUNT(DISTINCT outlet_id WHERE status = 'A')"
+    grain: outlet_snapshot
+
+  - id: penetration
+    module: customer
+    label: "Penetration"
+    business_definition: "Tỉ lệ outlet phát sinh bán ra so với total outlet."
+    preferred_formula: "aso / total_outlet * 100"
+    grain: territory_period
+
+  - id: coverage_state
+    module: customer
+    label: "Coverage by State"
+    business_definition: "Mức độ phủ outlet theo state/territory."
+    preferred_formula: "total_outlet or active_outlet by state"
+    grain: state_period
+
+  - id: new_outlet
+    module: customer
+    label: "New Outlet"
+    business_definition: "Số outlet mới mở/active trong kỳ."
+    preferred_formula: "COUNT rows in fact_newoutlet"
+    default_fact: fact_newoutlet
+
+  - id: lost_outlet
+    module: customer
+    label: "Lost Outlet"
+    business_definition: "Outlet bị mất: Active outlet - ASO."
+    preferred_formula: "lost_outlet = active_outlet - aso"
+    grain: territory_period
+
+  - id: avg_amount_per_outlet
+    module: customer
+    label: "Average Amount per Outlet"
+    business_definition: "Doanh số sellout trung bình trên mỗi outlet active."
+    preferred_formula: "sellout_amount / active_outlet"
+    grain: outlet_period
+
+  - id: avg_outlet_per_salesperson
+    module: customer
+    label: "Average Outlet per Salesperson"
+    business_definition: "Số outlet trung bình mỗi nhân viên phụ trách."
+    preferred_formula: "total_outlet / number_of_salespersons"
+    grain: salesperson_period
+
+
+  # ============================================================
+  # SALESFORCE & KPI MODULE
+  # ============================================================
+  - id: kpi_sellout_amount
+    module: salesforce_kpi
+    label: "KPI Sellout Amount"
+    business_definition: "Mục tiêu doanh thu sellout."
+    preferred_fact: fact_kpisales
+    kpi_type: target
+    related_metric: sellout_amount
+
+  - id: kpi_sellout_volume
+    module: salesforce_kpi
+    label: "KPI Sellout Volume"
+    business_definition: "Mục tiêu sản lượng sellout."
+    preferred_fact: fact_kpisales
+    kpi_type: target
+
+  - id: kpi_sellin_amount
+    module: salesforce_kpi
+    label: "KPI Sellin Amount"
+    business_definition: "Mục tiêu doanh thu sellin."
+    preferred_fact: fact_kpisales
+    kpi_type: target
+    related_metric: sellin_amount
+
+  - id: kpi_sellin_volume
+    module: salesforce_kpi
+    label: "KPI Sellin Volume"
+    business_definition: "Mục tiêu sản lượng sellin."
+    preferred_fact: fact_kpisales
+    kpi_type: target
+    related_metric: sellin_volume
+
+  - id: kpi_aso
+    module: salesforce_kpi
+    label: "KPI ASO"
+    business_definition: "Mục tiêu số outlet phát sinh số (ASO)."
+    preferred_fact: fact_kpisales
+    kpi_type: target
+    related_metric: aso
+
+  - id: brand_per_order
+    module: salesforce_kpi
+    label: "Brand per Order"
+    business_definition: "Số brand trung bình trên mỗi đơn hàng."
+    preferred_formula: "COUNT(DISTINCT brand_id) per order"
+    default_fact: fact_sellout
+
+  - id: sku_per_order
+    module: salesforce_kpi
+    label: "SKU per Order"
+    business_definition: "Số SKU trung bình trên mỗi đơn hàng."
+    preferred_formula: "COUNT(DISTINCT product_id) per order"
+    default_fact: fact_sellout

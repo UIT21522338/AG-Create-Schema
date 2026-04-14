@@ -1,0 +1,30 @@
+Hãy tạo cho tôi một Dashboard báo cáo Hiệu quả Bán ra (Sell-out Performance Dashboard) với cấu trúc và các thành phần chi tiết như sau:
+
+1. Bộ lọc dữ liệu (Global Filters / Slicers):
+Cho phép người dùng lọc toàn bộ báo cáo theo: Year-Month (Tháng - Năm), Zone (Vùng/Miền), Territory (Khu vực), và Channel (Kênh bán hàng).
+
+2. Khu vực Tổng quan (KPI Cards / Scorecards):
+
+Hiển thị 8 chỉ số quan trọng nhất (Top-level metrics) trên cùng:
+Doanh thu Sellout: Tổng Sell out GSV.
+Target Sellout: Tổng Sell out GSV Target.
+% Thực hiện: Tỷ lệ hoàn thành mục tiêu (Sell out GSV % vs Target).
+Số lượng đơn hàng: Tổng số bill bán ra (Order).
+Số cửa hàng Active: Tổng số điểm bán phát sinh doanh số (ASO).
+Sản lượng Sellout: Tổng sản lượng rớt hàng (Sell out Volume).
+Chất lượng đơn hàng (LPC): Số lượng line hàng trên mỗi đơn (SKU/Order).
+Tỷ lệ viếng thăm sinh số (Productive Call %): Tỷ lệ phần trăm viếng thăm thực tế so với kế hoạch (Call / MCP * 100%).
+
+3. Khu vực Biểu đồ Phân tích (Visualizations):
+Biểu đồ xu hướng (Trendline Chart): Dùng Line Chart biểu diễn sự tương quan giữa Sell out GSV và Sell out GSV Target theo chiều thời gian là các Tháng trong Năm (Month of Year). Mục đích để xem tiến độ chạy số qua các tháng.
+Biểu đồ đóng góp (Bar Chart): Dùng Bar Chart (hoặc Column Chart) thể hiện tổng doanh thu Sell out GSV được phân bổ theo từng Vùng (Zone). Mục đích để so sánh sức bán giữa các vùng.
+
+4. Bảng Dữ liệu Chi tiết (Detailed Table/Matrix):
+Tạo một bảng chi tiết cấp độ nhân viên Sales.
+Dimension (Dòng): Tên nhân viên Sales (Salesman Name).
+Measures (Cột): Liệt kê các chỉ số tương ứng cho từng Salesman bao gồm:
+Doanh thu thực đạt (Sell out GSV).
+Chỉ tiêu được giao (Sell out GSV Target).
+Tỷ lệ hoàn thành chỉ tiêu (Sell out GSV % vs Target).
+Số điểm bán có số (ASO).
+Tỷ lệ đi tuyến sinh số / Productive Call (Call vs Kế hoạch MCP).

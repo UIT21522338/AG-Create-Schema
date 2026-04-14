@@ -1,0 +1,57 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env_local/
+
+# Environment / secrets
+env/.env
+.env
+.env.*
+!.env.example
+!env/.env.example
+*.pem
+*.key
+*.crt
+
+# Build / packaging
+dist/
+build/
+*.egg-info/
+
+# DW agent runtime artifacts (large, generated)
+artifacts/
+!artifacts/.gitkeep
+
+# Large generated schema snapshots
+enriched_schema.yaml
+**/enriched_schema.yaml
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Notebook checkpoints
+.ipynb_checkpoints/

@@ -1,0 +1,31 @@
+rules:
+  - rule_id: R001_skip_unused_column
+    when:
+      field: column.business_meaning
+      contains_any: ["Field nay khong dung", "khong dung", "deprecated"]
+    action: exclude_from_gold_candidate
+  - rule_id: R002_bronze_append_only
+    when:
+      layer: bronze
+    action:
+      mode: one_to_one
+      keep_all_source_columns: true
+      add_metadata_columns: [_ingest_ts, _source_system, _run_id]
+  - rule_id: R003_silver_no_join
+    when:
+      layer: silver
+    action:
+      mode: one_to_one_clean
+      allow_only: [rename, cast, trim, deduplicate, validate]
+      disallow: [join, aggregate]
+  - rule_id: R004_fact_grain_from_metric
+    when:
+      entity_type: fact_candidate
+    action:
+      grain_must_match_metric_dictionary: true
+      require_primary_date: true
+  - rule_id: R005_no_invention
+    when:
+      scope: llm_outputs
+    action:
+      forbid_new_tables_or_columns_not_in_inputs: true

@@ -1,0 +1,62 @@
+pipeline_steps:
+  - step_id: step1
+    name: semantic_enrichment
+    type: llm_based
+    reads:
+      - inputs/source_schema/source_schema.yaml
+    writes:
+      - artifacts/run_{run_id}/phase1/enriched_schema.yaml
+  - step_id: step2
+    name: report_spec_parsing
+    type: llm_based
+    reads:
+      - inputs/report_specs/dashboard_spec_raw.txt
+      - inputs/report_specs/dashboard_spec.yaml
+    writes:
+      - artifacts/run_{run_id}/phase2/parsed_metrics.yaml
+  - step_id: step3
+    name: metric_mapping_gap_detection
+    type: hybrid
+    reads:
+      - artifacts/run_{run_id}/phase1/enriched_schema.yaml
+      - artifacts/run_{run_id}/phase2/parsed_metrics.yaml
+      - inputs/metrics/metric_dictionary.yaml
+    writes:
+      - artifacts/run_{run_id}/phase2/metric_mapping.yaml
+  - step_id: step4
+    name: human_confirmation
+    type: rule_based
+    reads:
+      - inputs/business_rules/business_rules.yaml
+      - artifacts/run_{run_id}/phase2/metric_mapping.yaml
+    writes:
+      - artifacts/run_{run_id}/phase3/confirmed_rules.yaml
+  - step_id: step5
+    name: bronze_silver_logical_spec
+    type: rule_based
+    reads:
+      - inputs/naming/naming_convention.yaml
+      - artifacts/run_{run_id}/phase1/enriched_schema.yaml
+      - artifacts/run_{run_id}/phase3/confirmed_rules.yaml
+    writes:
+      - artifacts/run_{run_id}/phase3/bronze_silver_logical_spec.yaml
+  - step_id: step6
+    name: gold_schema_design
+    type: llm_based
+    reads:
+      - artifacts/run_{run_id}/phase2/metric_mapping.yaml
+      - artifacts/run_{run_id}/phase3/confirmed_rules.yaml
+      - inputs/patterns/known_patterns.yaml
+      - inputs/naming/naming_convention.yaml
+    writes:
+      - artifacts/run_{run_id}/phase4/gold_design_spec.yaml
+  - step_id: step7
+    name: design_validation
+    type: hybrid
+    reads:
+      - artifacts/run_{run_id}/phase4/gold_design_spec.yaml
+      - inputs/metrics/metric_dictionary.yaml
+      - src/rulebase/rulebase.yaml
+    writes:
+      - artifacts/run_{run_id}/logs/run_summary.json
+      - artifacts/run_{run_id}/logs/validation_report.yaml

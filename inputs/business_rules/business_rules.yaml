@@ -1,0 +1,270 @@
+version: 1
+description: >
+  Global business rules for 5 modules (sellout, sellin, inventory,
+  salesforce&kpi, customer). Used by the schema design and metric
+  mapping agents to ensure consistent logic across runs.
+
+# ============================================================
+# GLOBAL RULES
+# ============================================================
+global:
+  # Dim SCD policy: Bronze đã giữ lịch sử, Silver/Gold dim = SCD1
+  dimension_scd_type_default: 1
+  # Kiểu đặt tên chung
+  naming:
+    bronze:
+      table_prefix: brz_
+      column_case: preserve        # giữ nguyên cột source
+      preserve_source_names: true
+    silver:
+      table_prefix: slv_
+      column_case: lower_snake_case
+      allowed_transforms: [rename, cast, deduplicate, validate]
+      disallowed_transforms: [join, aggregate, business_filter]
+    gold:
+      dim_prefix: dim_
+      fact_prefix: fct_
+      surrogate_key_suffix: _sk
+      business_key_suffix: _bk
+      metric_suffix: _amt
+
+  # Mặc định, nếu không override: chỉ lấy trạng thái hoàn tất
+  completed_status:
+    column_name: Status
+    values: ['C']
+
+# ============================================================
+# DATE RULES PER MODULE
+# ============================================================
+date_rules:
+  sellout:
+    primary_date_column: order_date
+    primary_date_role: order_date
+    # ship_date vẫn có thể dùng như supporting date nếu cần
+    supporting_dates:
+      - ship_date
+  sellin:
+    primary_date_column: received_date
+    primary_date_role: received_date
+    supporting_dates:
+      - doc_date
+  inventory:
+    primary_date_column: transaction_date
+    primary_date_role: transaction_date
+  visit_plan:
+    primary_date_column: visit_date
+    primary_date_role: visit_date
+  visit_actual:
+    primary_date_column: checkin_datetime
+    primary_date_role: checkin_date_trunc
+  kpi:
+    primary_date_column: cycle_date
+    primary_date_role: cycle_date
+
+# ============================================================
+# SELLOUT RULES
+# ============================================================
+sellout_rules:
+  fact_name: fact_sellout
+  grain: "order_line"          # 1 row = 1 order line
+  order_status:
+    column: Status
+    completed_values: ['C']
+  order_type:
+    column: order_type_id
+    positive_types: ['IN', 'PV']
+    negative_types: ['IR']
+  measures:
+    sellout_amount:
+      description: "Tổng sellout amount gồm thuế, đã trừ trả hàng."
+      formula: >
+        SUM(amt_incl_tax) WHERE order_type IN ('IN','PV')
+        MINUS
+        SUM(amt_incl_tax) WHERE order_type = 'IR'
+      column_source: amt_incl_tax
+
+    discount_amount:
+      description: "Tổng chiết khấu."
+      formula: "SUM(disc_amt)"
+      column_source: disc_amt
+
+    number_of_orders:
+      description: "Số đơn hàng bán ra hoàn tất."
+      grain: order_header
+      formula: "COUNT(DISTINCT order_number)"
+      filters:
+        status: ['C']
+
+    aso:
+      description: "Số cửa hàng có phát sinh bán ra thực tế (ASO)."
+      grain: outlet_period
+      formula: >
+        COUNT(DISTINCT outlet_id)
+        WHERE order_type IN ('IN','PV')
+        MINUS
+        COUNT(DISTINCT outlet_id)
+        WHERE order_type = 'IR'
+
+    value_per_outlet:
+      description: "Doanh thu trung bình trên mỗi ASO."
+      derived_from: [sellout_amount, aso]
+      formula: "sellout_amount / aso"
+
+    productive_call_pct:
+      description: "Productive Call % = Visit actual / Visit plan."
+      derived_from_facts: [fact_visitactual, fact_visitplan]
+      formula: >
+        productive_call_pct =
+          COUNT(fact_visitactual WHERE has_order = true)
+          / COUNT(fact_visitplan) * 100
+
+# ============================================================
+# SELLIN RULES
+# ============================================================
+sellin_rules:
+  fact_name: fact_sellin
+  grain: "order_line"
+  measures:
+    sellin_amount:
+      description: "Tổng giá trị nhận hàng từ supplier."
+      formula: "SUM(received_amt)"
+      column_source: received_amt
+
+    sellin_volume:
+      description: "Tổng sản lượng nhận (case)."
+      formula: "SUM(received_qty_cs)"
+      column_source: received_qty_cs
+
+    number_of_orders:
+      description: "Số đơn đặt hàng nhập."
+      formula: "COUNT(DISTINCT order_number)"
+
+    number_of_distributors:
+      description: "Số NPP có phát sinh nhập hàng."
+      formula: "COUNT(DISTINCT distributor_id)"
+
+    avg_order_value:
+      description: "Giá trị trung bình mỗi đơn sellin."
+      derived_from: [sellin_amount, number_of_orders]
+      formula: "sellin_amount / number_of_orders"
+
+    sku_per_order:
+      description: "Số SKU trung bình trên mỗi đơn sellin."
+      formula: "COUNT(DISTINCT product_id) per order"
+
+    sellin_per_distributor:
+      description: "Giá trị sellin trung bình trên mỗi NPP."
+      derived_from: [sellin_amount, number_of_distributors]
+      formula: "sellin_amount / number_of_distributors"
+
+    fillrate:
+      description: "Fillrate = nhận / đặt."
+      formula: "SUM(received_qty) / SUM(order_qty) * 100"
+
+# ============================================================
+# INVENTORY RULES
+# ============================================================
+inventory_rules:
+  fact_name: fact_inventory
+  grain: "product + batch + transaction_type + transaction_date"
+  transaction_type_column: transaction_type
+  snapshot_frequency: "monthly"
+  measures:
+    beginning_quantity:
+      description: "Tồn đầu kỳ, tính từ snapshot tháng trước."
+      computed_in: "snapshot_layer"
+    ending_quantity:
+      description: "Tồn cuối kỳ."
+      computed_in: "snapshot_layer"
+    beginning_value:
+      description: "Giá trị tồn đầu kỳ."
+      computed_in: "snapshot_layer"
+    ending_value:
+      description: "Giá trị tồn cuối kỳ."
+      computed_in: "snapshot_layer"
+    ending_dispatch_qty:
+      description: "Số lượng xuất trong kỳ."
+      formula: "SUM(qty) WHERE transaction_type = 'OUT'"
+    ending_receipt_qty:
+      description: "Số lượng nhập trong kỳ."
+      formula: "SUM(qty) WHERE transaction_type = 'IN'"
+    ending_dispatch_value:
+      description: "Giá trị xuất trong kỳ."
+      formula: "SUM(amt) WHERE transaction_type = 'OUT'"
+    ending_receipt_value:
+      description: "Giá trị nhập trong kỳ."
+      formula: "SUM(amt) WHERE transaction_type = 'IN'"
+    avg_age_of_inventory:
+      description: "Tuổi tồn kho trung bình (ngày)."
+      computed_in: "snapshot/report_layer"
+
+# ============================================================
+# CUSTOMER RULES
+# ============================================================
+customer_rules:
+  dimensions:
+    dim_outlet:
+      status_column: status
+      active_values: ['A']
+  metrics:
+    total_outlet:
+      description: "Tổng số outlet trong universe."
+      source: dim_outlet
+      formula: "COUNT(DISTINCT outlet_id)"
+    active_outlet:
+      description: "Số outlet Active (status = 'A')."
+      source: dim_outlet
+      formula: "COUNT(DISTINCT outlet_id WHERE status = 'A')"
+    aso:
+      description: "Active Selling Outlets (từ fact_sellout)."
+      source: fact_sellout
+      reference_metric: aso    # reuse từ sellout_rules
+    new_outlet:
+      description: "Số outlet mới."
+      source: fact_newoutlet
+      formula: "COUNT(*)"
+    lost_outlet:
+      description: "Outlet bị mất = active_outlet - aso."
+      formula: "lost_outlet = active_outlet - aso"
+    avg_amount_per_outlet:
+      description: "Doanh thu trung bình mỗi outlet active."
+      formula: "sellout_amount / active_outlet"
+    avg_outlet_per_salesperson:
+      description: "Số outlet trung bình mỗi nhân viên."
+      formula: "total_outlet / number_of_salespersons"
+
+# ============================================================
+# SALESFORCE & KPI RULES
+# ============================================================
+salesforce_kpi_rules:
+  visit:
+    fact_visitplan:
+      grain: "1 row per planned visit per outlet per date"
+      measures:
+        planned_calls:
+          description: "Số planned visits (MCP)."
+          formula: "COUNT(*)"
+    fact_visitactual:
+      grain: "1 row per actual check-in"
+      measures:
+        actual_calls:
+          description: "Số lần viếng thăm thực tế."
+          formula: "COUNT(*)"
+        productive_calls:
+          description: "Số lần viếng thăm có đơn hàng."
+          formula: "COUNT(*) WHERE has_order = true"
+    productive_call_pct:
+      description: "Productive Call % = actual_calls / planned_calls * 100."
+      facts_involved: [fact_visitactual, fact_visitplan]
+
+  kpi:
+    fact_kpisales:
+      grain: "1 row per KPI per salesperson per cycle per distributor"
+      kpi_id_column: kpi_id
+      value_column: target
+      dimensions_involved:
+        - dim_kpi
+        - dim_salesperson
+        - dim_distributor
+        - dim_date   # cycle_date
+        - dim_brand

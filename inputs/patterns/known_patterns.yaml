@@ -1,0 +1,602 @@
+version: 1
+description: >
+  Known dim/fact patterns for 5 core modules: sellout, sellin, inventory,
+  salesforce&kpi, customer. Used as few-shot guidance for the schema design agent.
+
+patterns:
+
+  # ============================================================
+  # 1. SELLOUT MODULE
+  # ============================================================
+  - id: sellout_core
+    domain: sellout
+    description: "Star schema chuẩn cho hiệu quả bán ra (sellout) theo order line."
+    source_hints:
+      likely_fact_tables:
+        - "*fact_sellout*"
+        - "*OM_SalesOrd*"
+      likely_dim_tables:
+        - "*dim_product*"
+        - "*dim_salesperson*"
+        - "*dim_distributor*"
+        - "*dim_outlet*"
+        - "*dim_territory*"
+        - "*dim_zone*"
+        - "*dim_channel*"
+        - "*dim_shoptype*"
+        - "*dim_brand*"
+        - "*dim_productclass*"
+        - "*dim_country*"
+        - "*dim_state*"
+        - "*dim_ordertype*"
+        - "*dim_date*"
+
+    facts:
+      - name: fact_sellout
+        grain: "1 row per order line (per order_number + product_id + lineref)"
+        description: >
+          Detail-level sellout fact table storing each sold line item,
+          including quantities, amounts, tax, discount and dates.
+        module: sellout
+        measures:
+          - id: sellout_amount
+            description: "Net sellout amount including tax, order type adjusted."
+            source_columns: [amt_incl_tax]
+            business_formula: >
+              SUM(amt_incl_tax) WHERE order_type IN ('IN','PV')
+              MINUS
+              SUM(amt_incl_tax) WHERE order_type = 'IR'
+          - id: discount_amount
+            description: "Total discount amount for sellout lines."
+            source_columns: [disc_amt]
+            business_formula: "SUM(disc_amt)"
+          - id: tax_amount
+            description: "Tax portion of sellout lines."
+            source_columns: [tax_amt]
+            business_formula: "SUM(tax_amt)"
+          - id: quantity_units
+            description: "Sellout quantity across units."
+            source_columns: [qty, qtypc, qtycs]
+            note: "Primary volume usually based on qtycs (case) if needed."
+          - id: number_of_orders
+            description: "Count of completed sellout orders."
+            source_columns: [order_number]
+            grain: "order header"
+            business_formula: >
+              COUNT DISTINCT(order_number)
+              with order_type IN ('IN','PV','IR') and status as per business rules.
+          - id: aso
+            description: "Active Selling Outlets (outlets with sellout)."
+            source_columns: [outlet_id, order_type]
+            business_formula: >
+              COUNT DISTINCT(outlet_id)
+              WHERE order_type IN ('IN','PV')
+              MINUS
+              COUNT DISTINCT(outlet_id)
+              WHERE order_type = 'IR'
+          - id: value_per_outlet
+            description: "Average sellout amount per active outlet."
+            derived_from: [sellout_amount, aso]
+            business_formula: "sellout_amount / aso"
+          - id: productive_call_ratio
+            description: "Productive Call = visit actual / visit plan."
+            derived_from: [fact_visitactual, fact_visitplan]
+            note: "Computed at reporting layer using fact_visit* facts."
+
+        degenerate_dimensions:
+          - id: order_number
+            description: "OrderNbr / order_number as degenerate dim."
+          - id: status
+            description: "Document status (C=completed, etc.)."
+          - id: free_item_flag
+            description: "Flag for free items on order line."
+            source_columns: [free_item]
+
+        foreign_keys:
+          - dim_date:
+              role: ship_date
+              column: ship_date
+          - dim_date:
+              role: order_date
+              column: order_date
+          - dim_distributor:
+              column: distributor_wid
+          - dim_outlet:
+              column: customer_wid
+          - dim_salesperson:
+              column: salesperson_wid
+          - dim_ordertype:
+              column: ordertype_wid
+          - dim_product:
+              column: productid_wid
+          - dim_territory:
+              via: dim_outlet
+          - dim_zone:
+              via: dim_territory
+          - dim_channel:
+              via: dim_outlet
+          - dim_shoptype:
+              via: dim_outlet
+          - dim_brand:
+              via: dim_product
+          - dim_productclass:
+              via: dim_product
+          - dim_country:
+              via: dim_distributor
+          - dim_state:
+              via: dim_distributor
+
+    dimensions:
+      - name: dim_date
+        grain: "1 row per calendar date"
+        scd_type: 1
+        key: date_wid
+        attributes:
+          - full_date
+          - year
+          - month
+          - year_month
+          - week_number
+          - day_of_week
+
+      - name: dim_distributor
+        grain: "1 row per distributor"
+        scd_type: 1
+        key: distributor_wid
+        attributes:
+          - distributor_id
+          - distributor_name
+          - country
+          - state
+          - zone
+          - territory
+
+      - name: dim_salesperson
+        grain: "1 row per salesperson"
+        scd_type: 1
+        key: salesperson_wid
+        attributes:
+          - salesman_id
+          - salesman_name
+          - distributor_id
+          - territory
+          - zone
+
+      - name: dim_outlet
+        grain: "1 row per outlet"
+        scd_type: 1
+        key: customer_wid
+        attributes:
+          - outlet_id
+          - outlet_name
+          - channel
+          - shop_type
+          - territory
+          - zone
+          - status           # A = active
+          - opened_date
+
+      - name: dim_product
+        grain: "1 row per product"
+        scd_type: 1
+        key: productid_wid
+        attributes:
+          - product_id
+          - product_name
+          - brand_id
+          - productclass_id
+          - sales_unit
+          - stock_unit
+
+      - name: dim_ordertype
+        grain: "1 row per order type code"
+        scd_type: 1
+        key: ordertype_wid
+        attributes:
+          - order_type_id
+          - order_type_name
+          - is_positive
+          - is_return
+
+
+  # ============================================================
+  # 2. SELLIN MODULE
+  # ============================================================
+  - id: sellin_core
+    domain: sellin
+    description: "Star schema chuẩn cho nhập hàng (sellin) theo order line."
+    source_hints:
+      likely_fact_tables:
+        - "*fact_sellin*"
+      likely_dim_tables:
+        - "*dim_product*"
+        - "*dim_distributor*"
+        - "*dim_date*"
+
+    facts:
+      - name: fact_sellin
+        grain: "1 row per sellin order line (order_number + product_id + lineref)"
+        description: "Detail-level inbound purchase lines (sellin) per distributor."
+        module: sellin
+        measures:
+          - id: sellin_amount
+            description: "Total received amount."
+            source_columns: [received_amt]
+            business_formula: "SUM(received_amt)"
+          - id: sellin_volume
+            description: "Total received quantity in case."
+            source_columns: [received_qty_cs]
+            business_formula: "SUM(received_qty_cs)"
+          - id: number_of_orders
+            description: "Number of sellin orders."
+            source_columns: [order_number]
+            business_formula: "COUNT DISTINCT(order_number)"
+          - id: number_of_distributors
+            description: "Number of distributors with sellin activity."
+            source_columns: [distributor_id]
+            business_formula: "COUNT DISTINCT(distributor_id)"
+          - id: avg_order_value
+            description: "Average sellin amount per order."
+            derived_from: [sellin_amount, number_of_orders]
+          - id: sku_per_order
+            description: "Average number of distinct SKUs per order."
+            note: "Requires grouping by order_number."
+          - id: sellin_per_distributor
+            description: "Average sellin amount per distributor."
+            derived_from: [sellin_amount, number_of_distributors]
+          - id: fillrate
+            description: "Fill rate of ordered vs received quantity."
+            note: "Requires relationship between order_qty and received_qty."
+
+        degenerate_dimensions:
+          - id: order_number
+            description: "Inbound purchase order number."
+          - id: receipt_number
+            description: "Receipt number."
+          - id: purchase_type
+            description: "Code describing type of purchase."
+
+        foreign_keys:
+          - dim_date:
+              role: doc_date
+              column: doc_date
+          - dim_date:
+              role: received_date
+              column: received_date
+          - dim_distributor:
+              column: distributor_wid
+          - dim_product:
+              column: productid_wid
+
+    dimensions:
+      - name: dim_product        # reuse same dim_product as sellout
+      - name: dim_distributor    # reuse same dim_distributor
+      - name: dim_date           # reuse same dim_date
+
+
+  # ============================================================
+  # 3. INVENTORY MODULE
+  # ============================================================
+  - id: inventory_core
+    domain: inventory
+    description: >
+      Inventory movement fact table at product + batch + transaction_type + date,
+      with snapshots for beginning/ending quantity and value per month.
+    source_hints:
+      likely_fact_tables:
+        - "*fact_inventory*"
+      likely_dim_tables:
+        - "*dim_product*"
+        - "*dim_distributor*"
+        - "*dim_date*"
+
+    facts:
+      - name: fact_inventory
+        grain: "1 row per inventory transaction (product + batch + transaction_type + transaction_date)"
+        description: "Inventory movements per distributor and product batch."
+        module: inventory
+        measures:
+          - id: transaction_qty
+            description: "Transaction quantity across units."
+            source_columns: [qty, qtypc, qtycs]
+          - id: transaction_amount
+            description: "Transaction amount."
+            source_columns: [amt]
+          - id: begin_quantity
+            description: "Beginning quantity per month (snapshot)."
+            note: "Derived in aggregation layer."
+          - id: ending_quantity
+            description: "Ending quantity per month (snapshot)."
+            note: "Derived in aggregation layer."
+          - id: begin_value
+            description: "Beginning value per month (snapshot)."
+            note: "Derived in aggregation layer."
+          - id: ending_value
+            description: "Ending value per month (snapshot)."
+            note: "Derived in aggregation layer."
+          - id: ending_dispatch_qty
+            description: "Total qty dispatched in the period."
+          - id: ending_receipt_qty
+            description: "Total qty received in the period."
+          - id: ending_dispatch_value
+            description: "Total value dispatched in the period."
+          - id: ending_receipt_value
+            description: "Total value received in the period."
+          - id: avg_age_of_inventory
+            description: "Average age of stock (e.g., in days)."
+            note: "Requires batch_number + transaction_date; computed in reporting layer."
+
+        degenerate_dimensions:
+          - id: transaction_type
+            description: "IN/OUT/ADJ etc."
+            source_columns: [transaction_type]
+          - id: batch_number
+            description: "Product batch number."
+          - id: repnbr
+            description: "Reference number for transaction."
+          - id: linerep
+            description: "Line reference for transaction."
+
+        foreign_keys:
+          - dim_date:
+              role: transaction_date
+              column: transaction_date
+          - dim_distributor:
+              column: distributor_wid
+          - dim_product:
+              column: productid_wid
+
+    dimensions:
+      - name: dim_product
+      - name: dim_distributor
+      - name: dim_date
+
+
+  # ============================================================
+  # 4. SALESFORCE & KPI MODULE
+  #    (visit plan / actual + KPIs)
+  # ============================================================
+  - id: visit_and_productive_call
+    domain: salesforce_kpi
+    description: >
+      Visit plan and actual visit facts used to compute Productive Call and route adherence.
+    source_hints:
+      likely_fact_tables:
+        - "*fact_visitplan*"
+        - "*fact_visitactual*"
+      likely_dim_tables:
+        - "*dim_salesperson*"
+        - "*dim_outlet*"
+        - "*dim_distributor*"
+        - "*dim_date*"
+        - "*dim_territory*"
+        - "*dim_zone*"
+
+    facts:
+      - name: fact_visitplan
+        grain: "1 row per planned visit (per outlet per date)"
+        description: "Planned visits per route, salesperson, and outlet."
+        module: salesforce_kpi
+        measures:
+          - id: planned_calls
+            description: "Number of planned visits (MCP)."
+            business_formula: "COUNT rows in fact_visitplan at desired grain."
+        degenerate_dimensions:
+          - id: sales_route_id
+            source_columns: [sales_route_id]
+          - id: sales_route_name
+            source_columns: [sales_route_name]
+          - id: day_of_week
+            source_columns: [day_of_week]
+          - id: sales_frequency
+            source_columns: [sales_frequency]
+          - id: week_number
+            source_columns: [week_number]
+        foreign_keys:
+          - dim_date:
+              role: visit_date
+              column: visit_date
+          - dim_distributor:
+              column: distributor_wid
+          - dim_salesperson:
+              column: salesperson_wid
+          - dim_outlet:
+              column: customer_wid
+
+      - name: fact_visitactual
+        grain: "1 row per actual check-in"
+        description: "Actual visit check-ins per salesperson and outlet."
+        module: salesforce_kpi
+        measures:
+          - id: actual_calls
+            description: "Number of actual visits."
+            business_formula: "COUNT rows in fact_visitactual at desired grain."
+          - id: productive_calls
+            description: "Number of visits with order."
+            source_columns: [has_order]
+            business_formula: "COUNT rows where has_order = true."
+        degenerate_dimensions:
+          - id: checkin_datetime
+          - id: has_image
+          - id: checkin_reason_code
+          - id: checkin_reason
+          - id: noteid
+          - id: distance_between_salesman_and_outlet
+        foreign_keys:
+          - dim_date:
+              role: checkin_date
+              column: checkin_datetime
+          - dim_distributor:
+              column: distributor_wid
+          - dim_salesperson:
+              column: salesperson_wid
+          - dim_outlet:
+              column: customer_wid
+
+    kpi_relationships:
+      - id: productive_call_ratio
+        description: "Productive Call = visit actual / visit plan."
+        formula: "productive_call_pct = actual_calls / planned_calls * 100"
+        facts_involved: [fact_visitactual, fact_visitplan]
+        note: "Join by salesperson + outlet + date or by salesperson + date depending on business grain."
+
+  - id: kpi_sales_core
+    domain: salesforce_kpi
+    description: "KPI fact table storing numeric targets/measures per salesperson per cycle."
+    source_hints:
+      likely_fact_tables:
+        - "*fact_kpisales*"
+      likely_dim_tables:
+        - "*dim_kpi*"
+        - "*dim_salesperson*"
+        - "*dim_distributor*"
+        - "*dim_brand*"
+        - "*dim_date*"
+
+    facts:
+      - name: fact_kpisales
+        grain: "1 row per KPI per salesperson per cycle (per distributor)"
+        description: >
+          Each row holds KPI target or actual value for a given KPI ID, salesperson,
+          distributor, and cycle (time bucket).
+        module: salesforce_kpi
+        measures:
+          - id: kpi_value
+            description: "Numeric target or actual value of the KPI."
+            source_columns: [target]
+        degenerate_dimensions:
+          - id: cycle_number
+          - id: cycle_date
+        foreign_keys:
+          - dim_kpi:
+              column: kpi_wid
+          - dim_salesperson:
+              column: salesperson_wid
+          - dim_distributor:
+              column: distributor_wid
+          - dim_brand:
+              column: brand_id
+          - dim_date:
+              role: cycle_date
+              column: cycle_date
+
+    dimensions:
+      - name: dim_kpi
+        grain: "1 row per KPI definition"
+        scd_type: 1
+        key: kpi_wid
+        attributes:
+          - kpi_id
+          - kpi_name
+          - kpi_group
+          - kpi_description
+
+      - name: dim_salesperson
+      - name: dim_distributor
+      - name: dim_date
+      - name: dim_brand
+
+    kpi_examples:
+      - id: kpi_sellout_amount
+        description: "KPI Sellout amount."
+      - id: kpi_sellout_volume
+        description: "KPI Sellout volume."
+      - id: kpi_sellin_amount
+        description: "KPI Sellin amount."
+      - id: kpi_sellin_volume
+        description: "KPI Sellin volume."
+      - id: kpi_aso
+        description: "Target active outlets."
+      - id: kpi_brand_per_order
+      - id: kpi_sku_per_order
+
+
+  # ============================================================
+  # 5. CUSTOMER MODULE
+  # ============================================================
+  - id: customer_coverage_core
+    domain: customer
+    description: >
+      Metrics for outlet universe, active outlets, penetration, coverage, new & lost outlets.
+    source_hints:
+      likely_fact_tables:
+        - "*fact_sellout*"
+        - "*fact_newoutlet*"
+      likely_dim_tables:
+        - "*dim_outlet*"
+        - "*dim_salesperson*"
+        - "*dim_distributor*"
+        - "*dim_territory*"
+        - "*dim_zone*"
+        - "*dim_date*"
+
+    facts:
+      - name: fact_newoutlet
+        grain: "1 row per new outlet event"
+        description: "Tracks new outlet creation/activation events."
+        module: customer
+        measures:
+          - id: new_outlet_count
+            description: "Count of new outlets in period."
+            business_formula: "COUNT rows in fact_newoutlet at desired grain."
+
+      - name: fact_sellout
+        reuse: sellout_core.fact_sellout
+        note: "Used to derive ASO and outlet churn."
+
+    dimensions:
+      - name: dim_outlet
+        grain: "1 row per outlet"
+        scd_type: 1
+        key: customer_wid
+        attributes:
+          - outlet_id
+          - outlet_name
+          - status          # 'A' = Active
+          - channel
+          - shop_type
+          - distributor_id
+          - salesman_id
+          - territory
+          - zone
+
+      - name: dim_salesperson
+      - name: dim_distributor
+      - name: dim_territory
+      - name: dim_zone
+      - name: dim_date
+
+    customer_metrics:
+      - id: total_outlet
+        description: "Total number of outlets."
+        source: dim_outlet
+        formula: "COUNT DISTINCT(outlet_id)"
+      - id: active_outlet
+        description: "Number of outlets with status = 'A'."
+        source: dim_outlet
+        formula: "COUNT DISTINCT(outlet_id WHERE status='A')"
+      - id: aso
+        description: "Active Selling Outlets with sellout."
+        source: fact_sellout
+        formula: >
+          COUNT DISTINCT(outlet_id)
+          WHERE order_type IN ('IN','PV')
+          MINUS
+          COUNT DISTINCT(outlet_id)
+          WHERE order_type = 'IR'
+      - id: penetration
+        description: "ASO / Total outlet (or vs target universe)."
+      - id: coverage_state
+        description: "Coverage per state/territory or zone."
+      - id: new_outlet
+        description: "Number of new outlets."
+        source: fact_newoutlet
+      - id: lost_outlet
+        description: "Lost outlet = active outlet - ASO."
+        formula: "lost_outlet = active_outlet - aso"
+      - id: avg_amount_per_outlet
+        description: "Average sellout amount per active outlet."
+        formula: "sellout_amount / active_outlet"
+      - id: avg_outlet_per_salesperson
+        description: "Average number of outlets per salesperson."
+        formula: "total_outlet / number_of_salespersons"

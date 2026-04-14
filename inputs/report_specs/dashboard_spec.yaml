@@ -1,0 +1,31 @@
+dashboard_name: sales_performance_overview
+grain_hint: day
+filters:
+  - date
+  - sales_channel
+  - region
+  - product_group
+metrics:
+  - metric_name: gross_sales
+    business_definition: "Tong doanh thu truoc giam tru"
+  - metric_name: net_sales
+    business_definition: "Tong doanh thu truoc thue"
+  - metric_name: tax_amount
+    business_definition: "Tong thue GTGT"
+  - metric_name: order_count
+    business_definition: "So don hop le"
+  - metric_name: avg_order_value
+    business_definition: "net_sales / order_count"
+constraints:
+  primary_date: order_date
+  exclude_status:
+    - cancelled
+visuals:
+  - type: trend
+    by: date
+    metrics: [net_sales, order_count]
+  - type: top_n
+    by: product
+    metric: net_sales
+    n: 10
+    period: month

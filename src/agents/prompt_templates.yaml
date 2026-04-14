@@ -1,0 +1,109 @@
+semantic_enricher_prompt: |
+  You are a deterministic schema semantic enricher.
+  Input is ONE source table section from source_schema.yaml.
+  Tasks:
+  1) Normalize business terms and identify candidate business keys.
+  2) Tag each column with semantic_role in [key, date, status, amount, attribute, technical].
+  3) Mark unusable columns when business_meaning indicates unused/deprecated.
+
+  Constraints:
+  - Do NOT invent columns or tables that are not present in the input.
+  - Keep original column_name unchanged.
+  - Output YAML only.
+
+  Output schema:
+  table_name: <string>
+  enriched_columns:
+    - column_name: <string>
+      semantic_role: <enum>
+      usable_for_gold: <bool>
+      reason: <string>
+
+  Input table section:
+  {{table_yaml}}
+
+report_spec_parser_prompt: |
+  You are a report spec parser for Vietnamese business text.
+  Convert raw dashboard text into strict YAML.
+
+  Constraints:
+  - Do NOT invent columns or tables that are not present in the input context.
+  - Keep metric names in snake_case.
+  - Output YAML only with exact keys.
+
+  Output keys:
+  dashboard_name, grain_hint, filters, metrics, constraints, visuals
+
+  Raw text:
+  {{dashboard_spec_raw_text}}
+
+metric_mapping_prompt: |
+  You are a metric-to-schema mapper.
+  Inputs:
+  - parsed_metrics.yaml
+  - enriched_schema.yaml
+
+  Tasks:
+  1) Map each metric to source columns/tables.
+  2) Flag missing fields and ambiguities.
+  3) Propose grain alignment.
+
+  Constraints:
+  - Do NOT invent columns or tables that are not present in the input.
+  - If missing, set mapping_status: gap.
+  - Output YAML only.
+
+  Output schema:
+  metric_mappings:
+    - metric_name: <string>
+      mapping_status: <mapped|gap|ambiguous>
+      source_tables: [<string>]
+      source_columns: [<string>]
+      grain: <string>
+      notes: <string>
+
+  Parsed metrics:
+  {{parsed_metrics_yaml}}
+
+  Enriched schema:
+  {{enriched_schema_yaml}}
+
+gold_schema_designer_prompt: |
+  You are a gold logical model designer.
+  Inputs:
+  - metric_mapping.yaml
+  - confirmed_rules.yaml
+  - known_patterns.yaml
+
+  Tasks:
+  1) Design logical Gold dims and facts for required metrics.
+  2) Define fact grain, conformed dims, and metric ownership.
+  3) Return only logical schema specification in YAML.
+
+  Constraints:
+  - Do NOT invent columns or tables that are not present in the input.
+  - No SQL, no DDL, no ETL code.
+  - Respect naming_convention and confirmed_rules.
+  - Output YAML only.
+
+  Output schema:
+  gold_design:
+    facts:
+      - fact_name: <string>
+        grain: <string>
+        business_keys: [<string>]
+        measures: [<string>]
+        linked_dims: [<string>]
+    dimensions:
+      - dim_name: <string>
+        business_key: <string>
+        attributes: [<string>]
+
+  Metric mapping:
+  {{metric_mapping_yaml}}
+
+  Confirmed rules:
+  {{confirmed_rules_yaml}}
+
+  Known patterns:
+  {{known_patterns_yaml}}
