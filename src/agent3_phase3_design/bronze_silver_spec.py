@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import yaml
 
@@ -68,6 +68,28 @@ def _extract_tables(schema_dict: Dict[str, Any]) -> List[Dict[str, Any]]:
     if isinstance(tables, list):
         return [table for table in tables if isinstance(table, dict)]
     return []
+
+
+def _load_relevant_table_names(path: Optional[Path]) -> Optional[Set[str]]:
+    if path is None or not path.exists():
+        return None
+    content = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    relevant = content.get("relevant_tables", {})
+    if not isinstance(relevant, dict):
+        return None
+
+    names: Set[str] = set()
+    for bucket_name in ("facts", "dims"):
+        bucket = relevant.get(bucket_name, [])
+        if not isinstance(bucket, list):
+            continue
+        for item in bucket:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            if name:
+                names.add(name)
+    return names
 
 
 def _extract_columns(table: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -303,6 +325,7 @@ def load_inputs_for_bronze_silver(
 def build_bronze_spec(
     source_schema: Dict[str, Any],
     table_catalog: Dict[str, Any],
+    allowed_source_tables: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Sinh ra cấu trúc bronze_spec (dict) theo schema_subset/source_schema.
@@ -314,6 +337,8 @@ def build_bronze_spec(
     for table in _extract_tables(source_schema):
         source_table = str(table.get("name") or table.get("table") or "").strip()
         if not source_table:
+            continue
+        if allowed_source_tables is not None and source_table not in allowed_source_tables:
             continue
 
         schema_name, base_name = _parse_source_table_name(source_table)
@@ -487,6 +512,7 @@ def run_bronze_silver_spec(
     db_name: str,
     project_id: str,
     version: str,
+    relevant_tables_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Orchestrator:
@@ -509,7 +535,15 @@ def run_bronze_silver_spec(
         version=version,
     )
 
-    bronze_spec = build_bronze_spec(source_schema=source_schema, table_catalog=table_catalog)
+    relevant_set = _load_relevant_table_names(
+        Path(relevant_tables_path) if relevant_tables_path else None
+    )
+
+    bronze_spec = build_bronze_spec(
+        source_schema=source_schema,
+        table_catalog=table_catalog,
+        allowed_source_tables=relevant_set,
+    )
     silver_spec = build_silver_spec(
         source_schema=source_schema,
         table_catalog=table_catalog,
