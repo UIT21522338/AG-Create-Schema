@@ -35,6 +35,54 @@ def _validate_yaml_or_warn(yaml_text: str, context: str) -> None:
         logger.warning("LLM output is not valid YAML for %s: %s", context, exc)
 
 
+def _is_valid_yaml(yaml_text: str) -> bool:
+    if yaml is None:
+        return True
+    try:
+        yaml.safe_load(yaml_text)
+        return True
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
+def _repair_yaml_with_llm(invalid_text: str, context: str) -> str:
+    """Ask LLM to convert malformed content into strictly valid YAML."""
+    repair_system_prompt = """
+You are a YAML formatter and validator.
+Convert the provided content into valid YAML only.
+Rules:
+- Keep the original meaning and fields.
+- Do not add markdown fences.
+- Output a single YAML document.
+""".strip()
+
+    repair_user_prompt = f"""
+Context: {context}
+
+Please fix this content into valid YAML:
+
+{invalid_text}
+""".strip()
+
+    repaired = call_llm(system_prompt=repair_system_prompt, user_prompt=repair_user_prompt)
+    repaired = _strip_yaml_code_fence(repaired)
+    return repaired
+
+
+def _ensure_valid_yaml_response(llm_response: str, context: str) -> str:
+    cleaned = _strip_yaml_code_fence(llm_response)
+    if _is_valid_yaml(cleaned):
+        return cleaned
+
+    logger.warning("Attempting YAML repair for %s", context)
+    repaired = _repair_yaml_with_llm(cleaned, context=context)
+    if not repaired or not repaired.strip():
+        raise ValueError(f"YAML repair failed with empty output for {context}")
+    if not _is_valid_yaml(repaired):
+        raise ValueError(f"LLM output remains invalid YAML for {context} after repair")
+    return repaired
+
+
 def _strip_yaml_code_fence(text: str) -> str:
     """Normalize common markdown-wrapped YAML output from LLMs."""
     cleaned = text.strip()
@@ -108,9 +156,7 @@ Here is the central metric dictionary (YAML) with metric IDs and business defini
         logger.error("Step 2.1 failed: empty LLM response")
         raise ValueError("Empty LLM response for dashboard_spec.yaml")
 
-    llm_response = _strip_yaml_code_fence(llm_response)
-
-    _validate_yaml_or_warn(llm_response, context="dashboard_spec.yaml")
+    llm_response = _ensure_valid_yaml_response(llm_response, context="dashboard_spec.yaml")
 
     phase2_dir = ensure_run_subdir(run_id=run_id, phase="phase2")
     output_path = phase2_dir / "dashboard_spec.yaml"
@@ -175,9 +221,7 @@ Here is the global metric dictionary:
         logger.error("Step 2.2 failed: empty LLM response")
         raise ValueError("Empty LLM response for parsed_metrics.yaml")
 
-    llm_response = _strip_yaml_code_fence(llm_response)
-
-    _validate_yaml_or_warn(llm_response, context="parsed_metrics.yaml")
+    llm_response = _ensure_valid_yaml_response(llm_response, context="parsed_metrics.yaml")
 
     output_path = phase2_dir / "parsed_metrics.yaml"
     output_path.write_text(llm_response, encoding="utf-8")
