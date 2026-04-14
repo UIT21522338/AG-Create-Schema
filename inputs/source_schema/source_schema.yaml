@@ -14309,6 +14309,8 @@ tables:
   - branch
   - npp
   - master_data
+  - nhà phân phối
+  - distributor
   importance: medium
   columns:
   - name: CpnyID
@@ -14429,6 +14431,8 @@ tables:
   - user_group
   - phan_quyen
   - master_data
+  - nhà phân phối
+  - distributor
   importance: high
   columns:
   - name: UserID

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
 import yaml
+
+from src.agent3_phase3_design.bronze_silver_spec import run_bronze_silver_spec
 
 
 def _repo_root() -> Path:
@@ -163,3 +166,50 @@ def build_relevant_tables(run_id: str) -> Path:
         encoding="utf-8",
     )
     return output_path
+
+
+def build_relevant_tables_and_filtered_specs(
+    run_id: str,
+    db_name: str = "erp_core",
+    project_id: str = "sellout_performance",
+    project_root: str | None = None,
+    output_folder_name: str = "phase5_relevant_design",
+) -> Dict[str, str]:
+    root = Path(project_root) if project_root else _repo_root()
+    relevant_tables_path = build_relevant_tables(run_id)
+
+    spec_result = run_bronze_silver_spec(
+        project_root=str(root),
+        db_name=db_name,
+        project_id=project_id,
+        version=run_id,
+        relevant_tables_path=str(relevant_tables_path),
+    )
+
+    phase4_dir = root / "artifacts" / run_id / "phase4"
+    phase4_dir.mkdir(parents=True, exist_ok=True)
+    filtered_bronze_path = phase4_dir / "bronze_spec_filtered.yaml"
+    filtered_silver_path = phase4_dir / "silver_spec_filtered.yaml"
+    shutil.copy2(Path(spec_result["bronze_spec_path"]), filtered_bronze_path)
+    shutil.copy2(Path(spec_result["silver_spec_path"]), filtered_silver_path)
+
+    bundle_dir = root / "artifacts" / run_id / output_folder_name
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    bundled_relevant = bundle_dir / "relevant_tables.yaml"
+    bundled_bronze = bundle_dir / "bronze_spec.yaml"
+    bundled_silver = bundle_dir / "silver_spec.yaml"
+    shutil.copy2(relevant_tables_path, bundled_relevant)
+    shutil.copy2(Path(spec_result["bronze_spec_path"]), bundled_bronze)
+    shutil.copy2(Path(spec_result["silver_spec_path"]), bundled_silver)
+
+    return {
+        "relevant_tables_path": str(relevant_tables_path),
+        "bronze_spec_path": spec_result["bronze_spec_path"],
+        "silver_spec_path": spec_result["silver_spec_path"],
+        "filtered_bronze_spec_path": str(filtered_bronze_path),
+        "filtered_silver_spec_path": str(filtered_silver_path),
+        "bundle_dir": str(bundle_dir),
+        "bundled_relevant_tables_path": str(bundled_relevant),
+        "bundled_bronze_spec_path": str(bundled_bronze),
+        "bundled_silver_spec_path": str(bundled_silver),
+    }

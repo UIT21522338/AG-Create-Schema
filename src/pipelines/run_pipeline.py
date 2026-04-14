@@ -6,11 +6,13 @@ from pathlib import Path
 from typing import Optional
 
 from src.agents.confirmed_rules_builder import build_confirmed_rules
+from src.agents.gold_schema_designer_agent import build_gold_design_spec
 from src.agents.metric_mapping_agent import build_metric_mapping
 from src.agents.metric_parser_agent import (
     build_parsed_metrics_yaml,
     parse_dashboard_spec_raw_to_yaml,
 )
+from src.agents.relevant_tables_selector_agent import build_relevant_tables_and_filtered_specs
 from src.agents.semantic_enricher_agent import run_semantic_enrichment
 from src.utils.path_utils import set_active_run_id
 
@@ -31,6 +33,8 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
     - Step 2.2: Normalize metric mapping to parsed_metrics.yaml
     - Step 3: Metric Mapping & Gap Detection
     - Step 4: Confirmed Rules Builder (if confirm_questions.yaml is available)
+    - Step 5: Relevant Tables + Filtered Bronze/Silver Specs
+    - Step 6: Gold Schema Design
     """
     run_id = run_id or _generate_run_id()
     set_active_run_id(run_id)
@@ -62,6 +66,15 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
                 run_id,
             )
 
+        relevant_paths = build_relevant_tables_and_filtered_specs(run_id)
+        logger.info("Step 5 relevant tables output path: %s", relevant_paths["relevant_tables_path"])
+        logger.info("Step 5 filtered bronze spec output path: %s", relevant_paths["filtered_bronze_spec_path"])
+        logger.info("Step 5 filtered silver spec output path: %s", relevant_paths["filtered_silver_spec_path"])
+        logger.info("Step 5 bundle directory: %s", relevant_paths["bundle_dir"])
+
+        gold_design_path = build_gold_design_spec(run_id)
+        logger.info("Step 6 gold design output path: %s", gold_design_path)
+
         logger.info("Pipeline completed for run_id=%s", run_id)
         return {
             "semantic_enrichment": step1_output,
@@ -70,6 +83,10 @@ def run_pipeline(run_id: Optional[str] = None) -> dict[str, Optional[Path]]:
             "metric_mapping": metric_mapping_path,
             "gap_report": gap_report_path,
             "confirmed_rules": confirmed_rules_path,
+            "relevant_tables": Path(relevant_paths["relevant_tables_path"]),
+            "filtered_bronze_spec": Path(relevant_paths["filtered_bronze_spec_path"]),
+            "filtered_silver_spec": Path(relevant_paths["filtered_silver_spec_path"]),
+            "gold_design_spec": gold_design_path,
         }
     except Exception:
         logger.exception("Pipeline failed for run_id=%s", run_id)
